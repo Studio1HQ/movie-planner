@@ -255,13 +255,25 @@ class TMDbService {
   }
 
   async getMovieVideos(movieId: number): Promise<any[]> {
-    const data = await this.makeRequest(`/movie/${movieId}/videos`);
-    return data.results || [];
+    try {
+      const data = await this.makeRequest(`/movie/${movieId}/videos`);
+      console.log('Movie videos response:', data);
+      return data.results || [];
+    } catch (error) {
+      console.error('Error fetching movie videos:', error);
+      return [];
+    }
   }
 
   async getTVVideos(tvId: number): Promise<any[]> {
-    const data = await this.makeRequest(`/tv/${tvId}/videos`);
-    return data.results || [];
+    try {
+      const data = await this.makeRequest(`/tv/${tvId}/videos`);
+      console.log('TV videos response:', data);
+      return data.results || [];
+    } catch (error) {
+      console.error('Error fetching TV videos:', error);
+      return [];
+    }
   }
 
   getImageUrl(path: string): string {
@@ -280,21 +292,29 @@ class TMDbService {
         ? await this.getMovieVideos(movieId)
         : await this.getTVVideos(movieId);
       
-      // Find the first trailer from YouTube
+      console.log('All videos:', videos);
+      
+      // Find the first trailer from YouTube, prefer 'Trailer' over 'Teaser'
       const trailer = videos.find(video => 
-        video.site === 'YouTube' && 
-        (video.type === 'Trailer' || video.type === 'Teaser')
+        video.site === 'YouTube' && video.type === 'Trailer'
+      ) || videos.find(video => 
+        video.site === 'YouTube' && video.type === 'Teaser'
+      ) || videos.find(video => 
+        video.site === 'YouTube'
       );
       
       if (trailer) {
-        return `https://www.youtube.com/embed/${trailer.key}?autoplay=1&mute=1&controls=1&rel=0`;
+        console.log('Selected trailer:', trailer);
+        // Return base URL without parameters - we'll add them dynamically
+        return `https://www.youtube.com/embed/${trailer.key}`;
       }
       
+      console.log('No trailer found, using fallback');
       // Fallback to a placeholder video
-      return `https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&mute=1&controls=0&loop=1&playlist=dQw4w9WgXcQ`;
+      return `https://www.youtube.com/embed/dQw4w9WgXcQ`;
     } catch (error) {
       console.error('Error fetching trailer:', error);
-      return `https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&mute=1&controls=0&loop=1&playlist=dQw4w9WgXcQ`;
+      return `https://www.youtube.com/embed/dQw4w9WgXcQ`;
     }
   }
 
@@ -474,19 +494,49 @@ const MovieDetailsModal: React.FC<MovieDetailsModalProps> = ({
 }) => {
   const [isMuted, setIsMuted] = useState(true);
   const [showInfo, setShowInfo] = useState(false);
-  const [trailerUrl, setTrailerUrl] = useState<string>('');
+  const [baseTrailerUrl, setBaseTrailerUrl] = useState<string>('');
+  const [videoError, setVideoError] = useState(false);
   const tmdbService = new TMDbService();
 
   // Load trailer URL when movie changes
   useEffect(() => {
-    if (movie) {
+    if (movie && isOpen) {
       const loadTrailer = async () => {
-        const url = await tmdbService.getTrailerUrl(movie.id, movie.media_type);
-        setTrailerUrl(url);
+        try {
+          setVideoError(false);
+          setIsMuted(true); // Reset to muted for autoplay compliance
+          const url = await tmdbService.getTrailerUrl(movie.id, movie.media_type);
+          console.log('Trailer URL loaded:', url);
+          setBaseTrailerUrl(url);
+        } catch (error) {
+          console.error('Error loading trailer:', error);
+          setVideoError(true);
+        }
       };
       loadTrailer();
     }
-  }, [movie]);
+  }, [movie, isOpen]);
+
+  // Create dynamic trailer URL based on mute state
+  const trailerUrl = React.useMemo(() => {
+    if (!baseTrailerUrl) return '';
+    
+    // YouTube embed parameters for better compatibility
+    const params = new URLSearchParams({
+      autoplay: '1',
+      mute: isMuted ? '1' : '0',
+      controls: '1',
+      rel: '0',
+      modestbranding: '1',
+      playsinline: '1',
+      enablejsapi: '1',
+      origin: window.location.origin
+    });
+    
+    const finalUrl = `${baseTrailerUrl}?${params.toString()}`;
+    console.log('Final trailer URL:', finalUrl);
+    return finalUrl;
+  }, [baseTrailerUrl, isMuted]);
 
   if (!movie) return null;
 
@@ -514,56 +564,81 @@ const MovieDetailsModal: React.FC<MovieDetailsModalProps> = ({
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.9, opacity: 0 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="absolute inset-8 md:inset-12 lg:inset-20 xl:inset-32 bg-background rounded-lg overflow-hidden shadow-2xl"
+            className="absolute inset-4 md:inset-8 lg:inset-16 xl:inset-24 bg-card rounded-lg overflow-hidden shadow-2xl border border-border"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Video Background */}
-            <div className="relative w-full h-full">
-              {backdropUrl ? (
-                <div className="absolute inset-0">
-                  <iframe
-                    src={trailerUrl}
-                    className="w-full h-full object-cover"
-                    allow="autoplay; encrypted-media"
-                    allowFullScreen
-                    style={{ border: 'none' }}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
-                </div>
-              ) : (
-                <div 
-                  className="absolute inset-0 bg-cover bg-center"
-                  style={{ backgroundImage: `url(${backdropUrl})` }}
-                >
-                  <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
-                </div>
-              )}
+            <div className="relative w-full h-full flex flex-col">
+                             {/* Video Container */}
+               <div className="relative flex-1 bg-black">
+                 {trailerUrl && !videoError ? (
+                   <iframe
+                     key={`${baseTrailerUrl}-${isMuted}`} // Force re-render when URL or mute changes
+                     src={trailerUrl}
+                     className="w-full h-full"
+                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                     allowFullScreen
+                     loading="lazy"
+                     style={{ border: 'none' }}
+                     title="Movie Trailer"
+                     onError={() => {
+                       console.error('Iframe failed to load');
+                       setVideoError(true);
+                     }}
+                   />
+                 ) : backdropUrl ? (
+                   <div 
+                     className="w-full h-full bg-cover bg-center relative"
+                     style={{ backgroundImage: `url(${backdropUrl})` }}
+                   >
+                     <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                       <div className="text-center text-white">
+                         <Play className="h-16 w-16 mx-auto mb-2" />
+                         <p className="text-sm">Trailer not available</p>
+                         <p className="text-xs opacity-70">Click to view details</p>
+                       </div>
+                     </div>
+                   </div>
+                 ) : (
+                   <div className="w-full h-full bg-muted flex items-center justify-center">
+                     <div className="text-center text-muted-foreground">
+                       <Play className="h-16 w-16 mx-auto mb-2" />
+                       <p className="text-sm">Loading trailer...</p>
+                     </div>
+                   </div>
+                 )}
+                
+                {/* Video Overlay Gradient */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
 
-              {/* Controls */}
-              <div className="absolute top-4 right-4 flex gap-2 z-10">
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => setIsMuted(!isMuted)}
-                  className="bg-black/50 backdrop-blur-sm text-white p-2 rounded-full hover:bg-black/70 transition-colors"
-                >
-                  {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={onClose}
-                  className="bg-black/50 backdrop-blur-sm text-white p-2 rounded-full hover:bg-black/70 transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </motion.button>
+                {/* Controls */}
+                <div className="absolute top-4 right-4 flex gap-2 z-10">
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => setIsMuted(!isMuted)}
+                    className="bg-black/70 backdrop-blur-sm text-white p-2 rounded-full hover:bg-black/80 transition-colors"
+                    title={isMuted ? "Unmute" : "Mute"}
+                  >
+                    {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={onClose}
+                    className="bg-black/70 backdrop-blur-sm text-white p-2 rounded-full hover:bg-black/80 transition-colors"
+                    title="Close"
+                  >
+                    <X className="h-4 w-4" />
+                  </motion.button>
+                </div>
               </div>
 
-              {/* Content */}
-              <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6">
-                <div className="max-w-xl">
+              {/* Content Section */}
+              <div className="bg-card p-4 md:p-6 border-t border-border">
+                <div className="max-w-none">
                   <motion.h1 
-                    className="text-xl md:text-2xl lg:text-3xl font-bold text-white mb-2"
+                    className="text-xl md:text-2xl lg:text-3xl font-bold text-foreground mb-2 text-left"
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.2 }}
@@ -572,14 +647,14 @@ const MovieDetailsModal: React.FC<MovieDetailsModalProps> = ({
                   </motion.h1>
 
                   <motion.div 
-                    className="flex items-center gap-4 mb-4 text-white/80"
+                    className="flex items-center gap-4 mb-4 text-muted-foreground"
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.3 }}
                   >
                     <div className="flex items-center gap-1">
                       <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                      <span className="text-sm font-medium">{movie.vote_average.toFixed(1)}</span>
+                      <span className="text-sm font-medium text-foreground">{movie.vote_average.toFixed(1)}</span>
                     </div>
                     <span className="text-sm">{year}</span>
                     <span className="text-sm">{movie.media_type === 'tv' ? 'TV Series' : 'Movie'}</span>
@@ -587,7 +662,7 @@ const MovieDetailsModal: React.FC<MovieDetailsModalProps> = ({
                   </motion.div>
 
                   <motion.p 
-                    className="text-white/90 text-sm md:text-base mb-6 line-clamp-3 md:line-clamp-none"
+                    className="text-foreground/90 text-sm md:text-base mb-6 text-left leading-relaxed"
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.4 }}
@@ -596,7 +671,7 @@ const MovieDetailsModal: React.FC<MovieDetailsModalProps> = ({
                   </motion.p>
 
                   <motion.div 
-                    className="flex flex-wrap gap-2"
+                    className="flex flex-wrap gap-2 justify-start"
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.5 }}
@@ -606,30 +681,30 @@ const MovieDetailsModal: React.FC<MovieDetailsModalProps> = ({
                         onAddToPlanning(movie);
                         onClose();
                       }}
-                      className="bg-primary text-primary-foreground px-4 py-1.5 rounded-md text-sm font-medium hover:bg-primary/90 transition-colors flex items-center gap-1.5"
+                      className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:bg-primary/90 transition-colors flex items-center gap-1.5"
                     >
-                      <Plus className="h-3.5 w-3.5" />
+                      <Plus className="h-4 w-4" />
                       Add to List
                     </button>
                     
-                    <button className="bg-white/20 backdrop-blur-sm text-white px-4 py-1.5 rounded-md text-sm font-medium hover:bg-white/30 transition-colors flex items-center gap-1.5">
-                      <Play className="h-3.5 w-3.5" />
+                    <button className="bg-muted text-foreground px-4 py-2 rounded-md text-sm font-medium hover:bg-muted/80 transition-colors flex items-center gap-1.5">
+                      <Play className="h-4 w-4" />
                       <span className="hidden sm:inline">Watch Trailer</span>
                     </button>
                     
-                    <button className="bg-white/20 backdrop-blur-sm text-white p-1.5 rounded-md hover:bg-white/30 transition-colors">
-                      <Bookmark className="h-3.5 w-3.5" />
+                    <button className="bg-muted text-foreground p-2 rounded-md hover:bg-muted/80 transition-colors">
+                      <Bookmark className="h-4 w-4" />
                     </button>
                     
-                    <button className="bg-white/20 backdrop-blur-sm text-white p-1.5 rounded-md hover:bg-white/30 transition-colors">
-                      <Share className="h-3.5 w-3.5" />
+                    <button className="bg-muted text-foreground p-2 rounded-md hover:bg-muted/80 transition-colors">
+                      <Share className="h-4 w-4" />
                     </button>
                   </motion.div>
 
                   {/* Additional Info Toggle for Mobile */}
                   <motion.button
                     onClick={() => setShowInfo(!showInfo)}
-                    className="md:hidden mt-4 text-white/80 text-sm flex items-center gap-1"
+                    className="md:hidden mt-4 text-muted-foreground text-sm flex items-center gap-1"
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.6 }}
@@ -639,16 +714,16 @@ const MovieDetailsModal: React.FC<MovieDetailsModalProps> = ({
                   </motion.button>
 
                   <AnimatePresence>
-                    {(showInfo || window.innerWidth >= 768) && (
+                    {(showInfo || typeof window !== 'undefined' && window.innerWidth >= 768) && (
                       <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        className="mt-4 text-white/70 text-sm space-y-2"
+                        className="mt-4 text-muted-foreground text-sm space-y-2"
                       >
-                        <p><span className="font-medium">Genres:</span> {genres || 'N/A'}</p>
-                        <p><span className="font-medium">Release Date:</span> {releaseDate || 'N/A'}</p>
-                        <p><span className="font-medium">Type:</span> {movie.media_type === 'tv' ? 'TV Series' : 'Movie'}</p>
+                        <p className="text-left"><span className="font-medium text-foreground">Genres:</span> {genres || 'N/A'}</p>
+                        <p className="text-left"><span className="font-medium text-foreground">Release Date:</span> {releaseDate || 'N/A'}</p>
+                        <p className="text-left"><span className="font-medium text-foreground">Type:</span> {movie.media_type === 'tv' ? 'TV Series' : 'Movie'}</p>
                       </motion.div>
                     )}
                   </AnimatePresence>
