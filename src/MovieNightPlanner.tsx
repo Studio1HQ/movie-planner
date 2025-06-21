@@ -28,7 +28,7 @@ import {
   Bookmark,
   Share
 } from 'lucide-react';
-import { useVeltClient, usePresenceUsers } from '@veltdev/react';
+import { useVeltClient, usePresenceUsers, VeltCursor, VeltHuddle, VeltHuddleTool } from '@veltdev/react';
 
 // Utility function for cn
 function cn(...classes: (string | undefined | null | boolean)[]): string {
@@ -697,11 +697,21 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, placeholder = "Search m
 // Friends List Component
 interface FriendsListProps {
   friends: Friend[];
+  currentUser: any;
   onStartHuddle: (friend: Friend) => void;
 }
 
-const FriendsList: React.FC<FriendsListProps> = ({ friends, onStartHuddle }) => {
+const FriendsList: React.FC<FriendsListProps> = ({ friends, currentUser, onStartHuddle }) => {
   const onlineFriends = friends.filter(friend => friend.isOnline);
+  
+  // Sort users to put current user first
+  const sortedFriends = React.useMemo(() => {
+    return onlineFriends.sort((a, b) => {
+      if (currentUser && a.id === currentUser.userId) return -1;
+      if (currentUser && b.id === currentUser.userId) return 1;
+      return 0;
+    });
+  }, [onlineFriends, currentUser]);
 
   return (
     <div className="bg-card border border-border rounded-lg p-4">
@@ -711,35 +721,40 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends, onStartHuddle }) => 
       </h3>
       
       <div className="space-y-3">
-        {onlineFriends.map((friend) => (
-          <motion.div
-            key={friend.id}
-            className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/50 transition-colors"
-            whileHover={{ x: 4 }}
-          >
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <img
-                  src={friend.avatar}
-                  alt={friend.name}
-                  className="w-8 h-8 rounded-full"
-                />
-                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-background rounded-full" />
-              </div>
-              <span className="text-sm font-medium text-foreground">{friend.name}</span>
-            </div>
-            
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => onStartHuddle(friend)}
-              className="bg-primary text-primary-foreground px-3 py-1 rounded-md text-xs hover:bg-primary/90 transition-colors flex items-center gap-1"
+        {sortedFriends.map((friend) => {
+          const isCurrentUser = currentUser && friend.id === currentUser.userId;
+          
+          return (
+            <motion.div
+              key={friend.id}
+              className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/50 transition-colors"
+              whileHover={{ x: 4 }}
             >
-              <Video className="h-3 w-3" />
-              Huddle
-            </motion.button>
-          </motion.div>
-        ))}
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <img
+                    src={friend.avatar}
+                    alt={friend.name}
+                    className="w-8 h-8 rounded-full"
+                  />
+                  <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-background rounded-full" />
+                </div>
+                <span className="text-sm font-medium text-foreground">{friend.name}</span>
+              </div>
+              
+              {isCurrentUser ? (
+                <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">
+                  You
+                </span>
+              ) : (
+                <VeltHuddleTool className="bg-primary text-primary-foreground px-3 py-1 rounded-md text-xs hover:bg-primary/90 transition-colors flex items-center gap-1">
+                  <Video className="h-3 w-3" />
+                  Huddle
+                </VeltHuddleTool>
+              )}
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );
@@ -961,13 +976,27 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser }) =>
     initializeVeltDocument();
   }, [client]);
 
-  // Convert Velt presence users to our Friend format
-  const onlineUsers: Friend[] = presenceUsers ? presenceUsers.map(user => ({
-    id: user.userId,
-    name: user.name || user.email || 'Unknown User',
-    avatar: user.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name || user.userId}`,
-    isOnline: true
-  })) : [];
+  // Convert Velt presence users to our Friend format and ensure current user is included
+  const onlineUsers: Friend[] = React.useMemo(() => {
+    let users: Friend[] = presenceUsers ? presenceUsers.map(user => ({
+      id: user.userId,
+      name: user.name || user.email || 'Unknown User',
+      avatar: user.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name || user.userId}`,
+      isOnline: true
+    })) : [];
+
+    // Ensure current user is included in the list if they're not already there
+    if (currentUser && !users.find(user => user.id === currentUser.userId)) {
+      users.push({
+        id: currentUser.userId,
+        name: currentUser.name || 'You',
+        avatar: currentUser.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.name || currentUser.userId}`,
+        isOnline: true
+      });
+    }
+
+    return users;
+  }, [presenceUsers, currentUser]);
 
   // Load initial movies
   useEffect(() => {
@@ -1065,8 +1094,12 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser }) =>
   };
 
   const handleStartHuddle = (friend: Friend) => {
-    // Mock huddle functionality
-    alert(`Starting huddle with ${friend.name}...`);
+    // Start Velt huddle with the selected friend
+    if (client) {
+      // Velt huddle will automatically handle the huddle functionality
+      // The VeltHuddle component below will manage the UI
+      console.log(`Starting huddle with ${friend.name}...`);
+    }
   };
 
     const handleViewDetails = (movie: Movie) => {
@@ -1088,6 +1121,11 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser }) =>
     return (
     <ThemeProvider>
       <div className="min-h-screen bg-background text-foreground">
+        {/* Velt Live Cursors - Shows cursors of all online users */}
+        <VeltCursor />
+        
+        {/* Velt Huddle - Enables voice/video calls between users */}
+        <VeltHuddle />
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-40">
         <div className="container mx-auto px-4 py-3">
@@ -1210,6 +1248,7 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser }) =>
           <div className="space-y-4">
             <FriendsList
               friends={onlineUsers}
+              currentUser={currentUser}
               onStartHuddle={handleStartHuddle}
             />
             
