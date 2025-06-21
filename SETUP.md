@@ -46,12 +46,13 @@ npm run dev
 
 ## Features
 
-- **Real-time collaboration** with Velt (cursors, huddles)
+- **Real-time collaboration** with Velt (cursors, huddles, live state sync)
+- **Collaborative movie planning** - Real-time synced planning list across all users
 - **Live movie data** from TMDB API
 - **Search functionality** for movies and TV shows
 - **Trending, Popular, and Now Playing** movie categories
 - **Trailer playback** in movie details modal
-- **Collaborative planning** with friends
+- **User presence** - See who's online and active
 
 ## API Endpoints Used
 

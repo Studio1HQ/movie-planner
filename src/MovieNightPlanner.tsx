@@ -28,7 +28,7 @@ import {
   Bookmark,
   Share
 } from 'lucide-react';
-import { useVeltClient, usePresenceUsers, VeltCursor, VeltHuddle, VeltHuddleTool } from '@veltdev/react';
+import { useVeltClient, usePresenceUsers, VeltCursor, VeltHuddle, VeltHuddleTool, useLiveState } from '@veltdev/react';
 
 // Utility function for cn
 function cn(...classes: (string | undefined | null | boolean)[]): string {
@@ -1123,7 +1123,8 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser }) =>
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<'trending' | 'popular' | 'now_playing'>('trending');
-  const [planningItems, setPlanningItems] = useState<PlanningItem[]>([]);
+  // Use Velt Live State Sync for collaborative planning items
+  const [planningItems, setPlanningItems] = useLiveState<PlanningItem[]>('planningItems', []);
   const [selectedGenres, setSelectedGenres] = useState<number[]>([]);
   const [selectedType, setSelectedType] = useState<'all' | 'movie' | 'tv'>('all');
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
@@ -1244,21 +1245,22 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser }) =>
       userVote: 5
     };
 
-    setPlanningItems(prev => [...prev, newItem]);
+    // Update with Velt Live State - replace entire array
+    setPlanningItems([...planningItems, newItem]);
   };
 
   const handleVote = (itemId: string, rating: number) => {
-    setPlanningItems(prev =>
-      prev.map(item =>
-        item.id === itemId
-          ? { ...item, userVote: rating, votes: item.votes + (item.userVote ? 0 : 1) }
-          : item
-      )
+    const updatedItems = planningItems.map(item =>
+      item.id === itemId
+        ? { ...item, userVote: rating, votes: item.votes + (item.userVote ? 0 : 1) }
+        : item
     );
+    setPlanningItems(updatedItems);
   };
 
   const handleRemoveFromPlanning = (itemId: string) => {
-    setPlanningItems(prev => prev.filter(item => item.id !== itemId));
+    const updatedItems = planningItems.filter(item => item.id !== itemId);
+    setPlanningItems(updatedItems);
   };
 
   const handleStartHuddle = (friend: Friend) => {
