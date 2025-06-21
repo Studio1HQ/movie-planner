@@ -28,6 +28,7 @@ import {
   Bookmark,
   Share
 } from 'lucide-react';
+import { useVeltClient } from '@veltdev/react';
 
 // Utility function for cn
 function cn(...classes: (string | undefined | null | boolean)[]): string {
@@ -942,7 +943,18 @@ const MovieNightPlanner: React.FC = () => {
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   
+  const { client } = useVeltClient();
   const tmdbService = new TMDbService();
+
+  // Initialize Velt document
+  useEffect(() => {
+    const initializeVeltDocument = async () => {
+      if (client) {
+        await client.setDocument('movie-night-planner');
+      }
+    };
+    initializeVeltDocument();
+  }, [client]);
 
   // Load initial movies
   useEffect(() => {

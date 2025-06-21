@@ -2,6 +2,14 @@
 /// <reference types="react" />
 /// <reference types="react-dom" />
 
+interface ImportMetaEnv {
+  readonly VITE_VELT_API_KEY: string
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv
+}
+
 declare namespace NodeJS {
   interface Process{
     env: ProcessEnv
