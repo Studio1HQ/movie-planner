@@ -26,7 +26,8 @@ import {
   VolumeX,
   Info,
   Bookmark,
-  Share
+  Share,
+  LogOut
 } from 'lucide-react';
 import { useVeltClient, usePresenceUsers, VeltCursor, VeltHuddle, VeltHuddleTool, useLiveState } from '@veltdev/react';
 
@@ -1116,9 +1117,10 @@ const FilterComponent: React.FC<FilterProps> = ({
 // Main Movie Night Planner Component
 interface MovieNightPlannerProps {
   currentUser: any;
+  onSignOut?: () => Promise<void>;
 }
 
-const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser }) => {
+const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser, onSignOut }) => {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1139,6 +1141,15 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser }) =>
     const initializeVeltDocument = async () => {
       if (client) {
         await client.setDocument('movie-night-planner');
+        
+        // Configure cursor settings to improve user experience
+        if (client.setCursorConfig) {
+          await client.setCursorConfig({
+            showCursorName: true,
+            showCursorAvatar: true,
+            hideOwnCursor: true // Hide the current user's own cursor
+          });
+        }
       }
     };
     initializeVeltDocument();
@@ -1313,9 +1324,21 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser }) =>
             <div className="flex items-center gap-3">
               <ThemeToggle />
               <div className="text-right hidden sm:block">
-                <p className="text-sm font-medium">Welcome back!</p>
+                <p className="text-sm font-medium">Welcome back, {currentUser?.name || 'User'}!</p>
                 <p className="text-xs text-muted-foreground">Ready for movie night?</p>
               </div>
+              {onSignOut && (
+                <motion.button
+                  onClick={onSignOut}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-muted hover:bg-muted/80 rounded-md transition-colors"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  title="Sign Out"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span className="hidden sm:inline">Sign Out</span>
+                </motion.button>
+              )}
               <div className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center">
                 <User className="h-4 w-4" />
               </div>

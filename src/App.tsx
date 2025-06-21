@@ -34,52 +34,119 @@ function App() {
 function AuthenticatedApp() {
   const { client } = useVeltClient()
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [isSignedOut, setIsSignedOut] = useState(false)
 
   useEffect(() => {
     const initVelt = async () => {
-      if (client) {
-        // Generate unique user for this session
-        const user = generateUniqueUser()
+      if (client && !isSignedOut) {
+        // Check if we have a saved user session
+        const savedUser = localStorage.getItem('velt-user-session')
+        let user
+        
+        if (savedUser) {
+          user = JSON.parse(savedUser)
+        } else {
+          // Generate unique user for this session
+          user = generateUniqueUser()
+          localStorage.setItem('velt-user-session', JSON.stringify(user))
+        }
+        
         setCurrentUser(user)
         
-        // Sign in the user to Velt
+        // Sign in the user to Velt with proper cleanup
         await client.identify(user)
         
         console.log('Velt user signed in:', user.name, user.userId)
       }
     }
     initVelt()
-  }, [client])
+  }, [client, isSignedOut])
 
-  // Handle cleanup when the window is closed
+  // Improved cleanup handling
   useEffect(() => {
-    const handleBeforeUnload = async () => {
-      if (client && currentUser) {
-        // Sign out the user when the window is closed
-        await client.signOutUser()
-        console.log('Velt user signed out:', currentUser.name)
+    const handleBeforeUnload = async (event: BeforeUnloadEvent) => {
+      if (client && currentUser && !isSignedOut) {
+        // Ensure proper cleanup before page unload
+        try {
+          await client.signOutUser()
+          localStorage.removeItem('velt-user-session')
+          console.log('Velt user signed out on page unload:', currentUser.name)
+        } catch (error) {
+          console.warn('Error during sign out:', error)
+        }
       }
     }
 
     const handleVisibilityChange = async () => {
-      if (document.hidden && client && currentUser) {
-        // Optional: Sign out when tab becomes hidden (you can remove this if you want users to stay online when switching tabs)
-        // await client.signOutUser()
+      if (document.hidden && client && currentUser && !isSignedOut) {
+        // Update presence to 'away' when tab becomes hidden
+        try {
+          await client.updatePresence({ status: 'away' })
+        } catch (error) {
+          console.warn('Error updating presence:', error)
+        }
+      } else if (!document.hidden && client && currentUser && !isSignedOut) {
+        // Update presence to 'active' when tab becomes visible
+        try {
+          await client.updatePresence({ status: 'active' })
+        } catch (error) {
+          console.warn('Error updating presence:', error)
+        }
       }
     }
 
+    const handlePageHide = async () => {
+      if (client && currentUser && !isSignedOut) {
+        try {
+          await client.signOutUser()
+          localStorage.removeItem('velt-user-session')
+          console.log('Velt user signed out on page hide:', currentUser.name)
+        } catch (error) {
+          console.warn('Error during sign out:', error)
+        }
+      }
+    }
+
+    // Add multiple event listeners for better cleanup
     window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('pagehide', handlePageHide)
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('pagehide', handlePageHide)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [client, currentUser])
+  }, [client, currentUser, isSignedOut])
+
+  // Handle manual sign out
+  const handleSignOut = async () => {
+    if (client && currentUser) {
+      try {
+        setIsSignedOut(true)
+        await client.signOutUser()
+        localStorage.removeItem('velt-user-session')
+        setCurrentUser(null)
+        console.log('Velt user manually signed out:', currentUser.name)
+        
+        // Reload page to ensure clean state
+        setTimeout(() => {
+          window.location.reload()
+        }, 100)
+      } catch (error) {
+        console.error('Error during manual sign out:', error)
+        // Force reload even if sign out fails
+        window.location.reload()
+      }
+    }
+  }
 
   return (
     <div className="App">
-      <MovieNightPlanner currentUser={currentUser} />
+      <MovieNightPlanner 
+        currentUser={currentUser} 
+        onSignOut={handleSignOut}
+      />
     </div>
   )
 }

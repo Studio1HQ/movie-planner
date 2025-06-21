@@ -48,11 +48,13 @@ npm run dev
 
 - **Real-time collaboration** with Velt (cursors, huddles, live state sync)
 - **Collaborative movie planning** - Real-time synced planning list across all users
+- **Improved user session management** - Proper login/logout with session cleanup
+- **Smart cursor handling** - Users don't see their own cursor, preventing confusion
 - **Live movie data** from TMDB API
 - **Search functionality** for movies and TV shows
 - **Trending, Popular, and Now Playing** movie categories
 - **Trailer playback** in movie details modal
-- **User presence** - See who's online and active
+- **User presence** - See who's online and active with accurate status updates
 
 ## API Endpoints Used
 
@@ -74,10 +76,20 @@ The app automatically detects which type you're using and applies the correct au
 
 ## Troubleshooting
 
+### API Issues
 - **Getting 401 errors**: Your TMDB API key might be invalid or expired
   - Double-check your API key in the `.env` file
   - Make sure you're using the correct key format (Read Access Token or regular API key)
   - Try regenerating your API key in the TMDB dashboard
 - **Seeing mock data**: Check that your TMDB API key is correctly set in `VITE_TMDB_API_KEY`
+
+### Collaboration Issues
 - **Collaboration features not working**: Verify your Velt API key in `VITE_VELT_API_KEY`
+- **Seeing stale cursors**: Users who didn't sign out properly may show stale cursors
+  - The app now includes automatic cleanup on page unload and tab switching
+  - Use the "Sign Out" button in the header for proper session cleanup
+- **Current user seeing own cursor**: This has been fixed with cursor configuration
+- **Users not showing as online**: Check browser console for Velt connection errors
+
+### General
 - **Check browser console**: Look for detailed error messages and API responses 
