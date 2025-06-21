@@ -1141,15 +1141,6 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser, onSi
     const initializeVeltDocument = async () => {
       if (client) {
         await client.setDocument('movie-night-planner');
-        
-        // Configure cursor settings to improve user experience
-        if (client.setCursorConfig) {
-          await client.setCursorConfig({
-            showCursorName: true,
-            showCursorAvatar: true,
-            hideOwnCursor: true // Hide the current user's own cursor
-          });
-        }
       }
     };
     initializeVeltDocument();

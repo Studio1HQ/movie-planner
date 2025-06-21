@@ -77,21 +77,13 @@ function AuthenticatedApp() {
       }
     }
 
-    const handleVisibilityChange = async () => {
+    const handleVisibilityChange = () => {
+      // Velt automatically handles presence status based on tab visibility
+      // No manual presence updates needed - Velt manages this internally
       if (document.hidden && client && currentUser && !isSignedOut) {
-        // Update presence to 'away' when tab becomes hidden
-        try {
-          await client.updatePresence({ status: 'away' })
-        } catch (error) {
-          console.warn('Error updating presence:', error)
-        }
+        console.log('Tab hidden - Velt will automatically update presence to away')
       } else if (!document.hidden && client && currentUser && !isSignedOut) {
-        // Update presence to 'active' when tab becomes visible
-        try {
-          await client.updatePresence({ status: 'active' })
-        } catch (error) {
-          console.warn('Error updating presence:', error)
-        }
+        console.log('Tab visible - Velt will automatically update presence to active')
       }
     }
 
