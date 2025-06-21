@@ -101,44 +101,200 @@ const mockGenres: Genre[] = [
 // API Service
 class TMDbService {
   private baseUrl = 'https://api.themoviedb.org/3';
-  private apiKey = 'demo_key'; // In real app, use environment variable
   private imageBaseUrl = 'https://image.tmdb.org/t/p/w500';
+  private apiKey: string;
 
-  async fetchMovies(endpoint: string): Promise<Movie[]> {
+  constructor() {
+    this.apiKey = import.meta.env.VITE_TMDB_API_KEY || '';
+    if (!this.apiKey) {
+      console.warn('TMDB API key not found. Please add VITE_TMDB_API_KEY to your environment variables.');
+    }
+  }
+
+  private async makeRequest(endpoint: string, params: Record<string, any> = {}): Promise<any> {
+    if (!this.apiKey) {
+      console.warn('No API key available, falling back to mock data');
+      return this.getMockResponse(endpoint);
+    }
+
     try {
-      // Mock data for demo since we can't use real API key
-      return this.getMockMovies();
+      const url = new URL(`${this.baseUrl}${endpoint}`);
+      
+      // Add common parameters
+      const searchParams = new URLSearchParams({
+        language: 'en-US',
+        ...params
+      });
+      
+      // Try Bearer token first (for Read Access Token)
+      let headers: Record<string, string> = {
+        'accept': 'application/json'
+      };
+
+      // Check if this looks like a Read Access Token (starts with 'eyJ' for JWT) or regular API key
+      if (this.apiKey.startsWith('eyJ')) {
+        // This looks like a Read Access Token (JWT format)
+        headers['Authorization'] = `Bearer ${this.apiKey}`;
+      } else {
+        // This looks like a regular API key, use query parameter
+        searchParams.append('api_key', this.apiKey);
+      }
+      
+      url.search = searchParams.toString();
+
+      const response = await fetch(url.toString(), { headers });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('TMDB API Error:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData,
+          endpoint,
+          params
+        });
+        
+        // If Bearer token fails, try with API key as query parameter
+        if (response.status === 401 && headers['Authorization']) {
+          console.log('Bearer token failed, trying with API key as query parameter...');
+          delete headers['Authorization'];
+          
+          const retryUrl = new URL(`${this.baseUrl}${endpoint}`);
+          const retryParams = new URLSearchParams({
+            language: 'en-US',
+            api_key: this.apiKey,
+            ...params
+          });
+          retryUrl.search = retryParams.toString();
+          
+          const retryResponse = await fetch(retryUrl.toString(), { headers });
+          
+          if (!retryResponse.ok) {
+            throw new Error(`HTTP error! status: ${retryResponse.status} - ${retryResponse.statusText}`);
+          }
+          
+          return await retryResponse.json();
+        }
+        
+        throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
+      }
+
+      return await response.json();
     } catch (error) {
       console.error('API Error:', error);
-      return this.getMockMovies();
+      console.warn('Falling back to mock data due to API error');
+      return this.getMockResponse(endpoint);
     }
+  }
+
+  private getMockResponse(endpoint: string): any {
+    if (endpoint.includes('/trending/') || endpoint.includes('/movie/popular') || endpoint.includes('/movie/now_playing')) {
+      return { results: this.getMockMovies() };
+    }
+    if (endpoint.includes('/search/')) {
+      return { results: [...this.getMockMovies(), ...this.getMockTVShows()] };
+    }
+    if (endpoint.includes('/videos')) {
+      return { 
+        results: [
+          {
+            key: 'dQw4w9WgXcQ',
+            site: 'YouTube',
+            type: 'Trailer',
+            name: 'Official Trailer'
+          }
+        ]
+      };
+    }
+    return { results: [] };
+  }
+
+  async fetchMovies(category: 'trending' | 'popular' | 'now_playing'): Promise<Movie[]> {
+    let endpoint = '';
+    
+    switch (category) {
+      case 'trending':
+        endpoint = '/trending/movie/day';
+        break;
+      case 'popular':
+        endpoint = '/movie/popular';
+        break;
+      case 'now_playing':
+        endpoint = '/movie/now_playing';
+        break;
+    }
+
+    const data = await this.makeRequest(endpoint);
+    return data.results.map((movie: any) => ({
+      ...movie,
+      media_type: 'movie'
+    }));
   }
 
   async searchMovies(query: string): Promise<Movie[]> {
     if (!query.trim()) return [];
-    return this.getMockMovies().filter(movie => 
-      movie.title.toLowerCase().includes(query.toLowerCase())
-    );
+    
+    const data = await this.makeRequest('/search/movie', { query });
+    return data.results.map((movie: any) => ({
+      ...movie,
+      media_type: 'movie'
+    }));
   }
 
   async searchTVShows(query: string): Promise<Movie[]> {
     if (!query.trim()) return [];
-    return this.getMockTVShows().filter(show => 
-      (show.name || '').toLowerCase().includes(query.toLowerCase())
-    );
+    
+    const data = await this.makeRequest('/search/tv', { query });
+    return data.results.map((show: any) => ({
+      ...show,
+      title: show.name,
+      release_date: show.first_air_date,
+      media_type: 'tv'
+    }));
   }
 
-    getImageUrl(path: string): string {
+  async getMovieVideos(movieId: number): Promise<any[]> {
+    const data = await this.makeRequest(`/movie/${movieId}/videos`);
+    return data.results || [];
+  }
+
+  async getTVVideos(tvId: number): Promise<any[]> {
+    const data = await this.makeRequest(`/tv/${tvId}/videos`);
+    return data.results || [];
+  }
+
+  getImageUrl(path: string): string {
+    if (!path) return '/placeholder-movie.jpg';
     return `${this.imageBaseUrl}${path}`;
   }
 
   getBackdropUrl(path: string): string {
+    if (!path) return '/placeholder-backdrop.jpg';
     return `https://image.tmdb.org/t/p/w1280${path}`;
   }
 
-  getTrailerUrl(movieId: number): string {
-    // Mock trailer URL - in real app, fetch from API
-    return `https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&mute=1&controls=0&loop=1&playlist=dQw4w9WgXcQ`;
+  async getTrailerUrl(movieId: number, mediaType: 'movie' | 'tv' = 'movie'): Promise<string> {
+    try {
+      const videos = mediaType === 'movie' 
+        ? await this.getMovieVideos(movieId)
+        : await this.getTVVideos(movieId);
+      
+      // Find the first trailer from YouTube
+      const trailer = videos.find(video => 
+        video.site === 'YouTube' && 
+        (video.type === 'Trailer' || video.type === 'Teaser')
+      );
+      
+      if (trailer) {
+        return `https://www.youtube.com/embed/${trailer.key}?autoplay=1&mute=1&controls=1&rel=0`;
+      }
+      
+      // Fallback to a placeholder video
+      return `https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&mute=1&controls=0&loop=1&playlist=dQw4w9WgXcQ`;
+    } catch (error) {
+      console.error('Error fetching trailer:', error);
+      return `https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&mute=1&controls=0&loop=1&playlist=dQw4w9WgXcQ`;
+    }
   }
 
   private getMockMovies(): Movie[] {
@@ -317,7 +473,19 @@ const MovieDetailsModal: React.FC<MovieDetailsModalProps> = ({
 }) => {
   const [isMuted, setIsMuted] = useState(true);
   const [showInfo, setShowInfo] = useState(false);
+  const [trailerUrl, setTrailerUrl] = useState<string>('');
   const tmdbService = new TMDbService();
+
+  // Load trailer URL when movie changes
+  useEffect(() => {
+    if (movie) {
+      const loadTrailer = async () => {
+        const url = await tmdbService.getTrailerUrl(movie.id, movie.media_type);
+        setTrailerUrl(url);
+      };
+      loadTrailer();
+    }
+  }, [movie]);
 
   if (!movie) return null;
 
@@ -325,7 +493,6 @@ const MovieDetailsModal: React.FC<MovieDetailsModalProps> = ({
   const releaseDate = movie.release_date || movie.first_air_date || '';
   const year = releaseDate ? new Date(releaseDate).getFullYear() : '';
   const backdropUrl = movie.backdrop_path ? tmdbService.getBackdropUrl(movie.backdrop_path) : '';
-  const trailerUrl = tmdbService.getTrailerUrl(movie.id);
 
   const genres = movie.genre_ids.map(id => 
     mockGenres.find(genre => genre.id === id)?.name
@@ -1019,6 +1186,7 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser }) =>
       setMovies(data);
     } catch (error) {
       console.error('Error loading movies:', error);
+      setMovies([]); // Set empty array on error
     } finally {
       setLoading(false);
     }
