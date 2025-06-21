@@ -28,7 +28,7 @@ import {
   Bookmark,
   Share
 } from 'lucide-react';
-import { useVeltClient } from '@veltdev/react';
+import { useVeltClient, usePresenceUsers } from '@veltdev/react';
 
 // Utility function for cn
 function cn(...classes: (string | undefined | null | boolean)[]): string {
@@ -932,7 +932,11 @@ const FilterComponent: React.FC<FilterProps> = ({
 };
 
 // Main Movie Night Planner Component
-const MovieNightPlanner: React.FC = () => {
+interface MovieNightPlannerProps {
+  currentUser: any;
+}
+
+const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser }) => {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -944,6 +948,7 @@ const MovieNightPlanner: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   
   const { client } = useVeltClient();
+  const presenceUsers = usePresenceUsers();
   const tmdbService = new TMDbService();
 
   // Initialize Velt document
@@ -955,6 +960,14 @@ const MovieNightPlanner: React.FC = () => {
     };
     initializeVeltDocument();
   }, [client]);
+
+  // Convert Velt presence users to our Friend format
+  const onlineUsers: Friend[] = presenceUsers ? presenceUsers.map(user => ({
+    id: user.userId,
+    name: user.name || user.email || 'Unknown User',
+    avatar: user.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name || user.userId}`,
+    isOnline: true
+  })) : [];
 
   // Load initial movies
   useEffect(() => {
@@ -1017,10 +1030,19 @@ const MovieNightPlanner: React.FC = () => {
     const existingItem = planningItems.find(item => item.movie.id === movie.id);
     if (existingItem) return;
 
+    if (!currentUser) return;
+
+    const currentUserAsFriend: Friend = {
+      id: currentUser.userId,
+      name: currentUser.name,
+      avatar: currentUser.photoUrl,
+      isOnline: true
+    };
+
     const newItem: PlanningItem = {
       id: `${movie.id}-${Date.now()}`,
       movie,
-      addedBy: mockFriends[0], // Current user
+      addedBy: currentUserAsFriend,
       votes: 1,
       userVote: 5
     };
@@ -1187,7 +1209,7 @@ const MovieNightPlanner: React.FC = () => {
           {/* Sidebar */}
           <div className="space-y-4">
             <FriendsList
-              friends={mockFriends}
+              friends={onlineUsers}
               onStartHuddle={handleStartHuddle}
             />
             
