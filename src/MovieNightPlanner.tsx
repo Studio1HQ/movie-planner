@@ -27,9 +27,10 @@ import {
   Info,
   Bookmark,
   Share,
-  LogOut
+  LogOut,
+  UserPlus
 } from 'lucide-react';
-import { useVeltClient, usePresenceUsers, VeltCursor, VeltHuddle, VeltHuddleTool, useLiveState } from '@veltdev/react';
+import { useVeltClient, usePresenceUsers, VeltCursor, VeltHuddle, VeltHuddleTool, useLiveState, VeltPresence } from '@veltdev/react';
 
 // Utility function for cn
 function cn(...classes: (string | undefined | null | boolean)[]): string {
@@ -945,6 +946,7 @@ interface FriendsListProps {
 }
 
 const FriendsList: React.FC<FriendsListProps> = ({ friends, currentUser, onStartHuddle }) => {
+  const { client } = useVeltClient();
   const onlineFriends = friends.filter(friend => friend.isOnline);
   
   // Sort users to put current user first
@@ -955,6 +957,24 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends, currentUser, onStart
       return 0;
     });
   }, [onlineFriends, currentUser]);
+
+  const handleStartFollowing = async (friend: Friend) => {
+    if (client) {
+      try {
+        const presenceElement = client.getPresenceElement();
+        if (presenceElement) {
+          // Use the Velt SDK method to start following
+          await (presenceElement as any).startFollowingUser(friend.id);
+          console.log(`Started following ${friend.name}...`);
+        }
+      } catch (error) {
+        console.error('Error starting follow mode:', error);
+        // Fallback: The Follow Me mode should work through the VeltPresence component
+        // Users can click on avatars in the presence bar to start following
+        console.log('Use the presence avatars in the header to start following users');
+      }
+    }
+  };
 
   return (
     <div className="bg-card border border-border rounded-lg p-4">
@@ -990,10 +1010,22 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends, currentUser, onStart
                   You
                 </span>
               ) : (
-                <VeltHuddleTool className="bg-primary text-primary-foreground px-3 py-1 rounded-md text-xs hover:bg-primary/90 transition-colors flex items-center gap-1">
-                  <Video className="h-3 w-3" />
-                  Huddle
-                </VeltHuddleTool>
+                <div className="flex items-center gap-2">
+                  <VeltHuddleTool className="bg-primary text-primary-foreground px-3 py-1 rounded-md text-xs hover:bg-primary/90 transition-colors flex items-center gap-1">
+                    <Video className="h-3 w-3" />
+                    Huddle
+                  </VeltHuddleTool>
+                  <motion.button
+                    onClick={() => handleStartFollowing(friend)}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="bg-secondary text-secondary-foreground px-3 py-1 rounded-md text-xs hover:bg-secondary/90 transition-colors flex items-center gap-1"
+                    title={`Follow ${friend.name} - or click their avatar in the header`}
+                  >
+                    <UserPlus className="h-3 w-3" />
+                    Follow
+                  </motion.button>
+                </div>
               )}
             </motion.div>
           );
@@ -1211,11 +1243,22 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser, onSi
   const presenceUsers = usePresenceUsers();
   const tmdbService = new TMDbService();
 
-  // Initialize Velt document
+  // Initialize Velt document and Follow Me mode
   useEffect(() => {
     const initializeVeltDocument = async () => {
       if (client) {
         await client.setDocument('movie-night-planner');
+        
+        // Enable Follow Me mode via API for better compatibility
+        try {
+          const presenceElement = client.getPresenceElement();
+          if (presenceElement && (presenceElement as any).enableFlockMode) {
+            (presenceElement as any).enableFlockMode();
+            console.log('Follow Me mode enabled via API');
+          }
+        } catch (error) {
+          console.log('Follow Me mode will work through VeltPresence component');
+        }
       }
     };
     initializeVeltDocument();
@@ -1389,6 +1432,10 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser, onSi
             
             <div className="flex items-center gap-3">
               <ThemeToggle />
+              
+              {/* Velt Presence with Follow Me Mode - Click on avatars to follow users */}
+              <VeltPresence flockMode={true} />
+              
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-medium">Welcome back, {currentUser?.name || 'User'}!</p>
                 <p className="text-xs text-muted-foreground">Ready for movie night?</p>
