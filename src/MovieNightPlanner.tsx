@@ -1015,16 +1015,6 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends, currentUser, onStart
                     <Video className="h-3 w-3" />
                     Huddle
                   </VeltHuddleTool>
-                  <motion.button
-                    onClick={() => handleStartFollowing(friend)}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    className="bg-secondary text-secondary-foreground px-3 py-1 rounded-md text-xs hover:bg-secondary/90 transition-colors flex items-center gap-1"
-                    title={`Follow ${friend.name} - or click their avatar in the header`}
-                  >
-                    <UserPlus className="h-3 w-3" />
-                    Follow
-                  </motion.button>
                 </div>
               )}
             </motion.div>
