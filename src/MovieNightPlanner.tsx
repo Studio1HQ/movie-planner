@@ -28,7 +28,8 @@ import {
   Bookmark,
   Share,
   LogOut,
-  UserPlus
+  UserPlus,
+  RefreshCw
 } from 'lucide-react';
 import { useVeltClient, usePresenceUsers, VeltCursor, VeltHuddle, VeltHuddleTool, useLiveState, VeltPresence } from '@veltdev/react';
 
@@ -79,10 +80,26 @@ interface MovieDetailsModalProps {
   onAddToPlanning: (movie: Movie) => void;
 }
 
-// Mock data
+// Hardcoded users for the application
+const HARDCODED_USERS = [
+  {
+    userId: 'user-1',
+    name: 'Sarah Chen',
+    email: 'sarah.chen@example.com',
+    photoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah'
+  },
+  {
+    userId: 'user-2', 
+    name: 'Mike Johnson',
+    email: 'mike.johnson@example.com',
+    photoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Mike'
+  }
+];
+
+// Mock data (keeping for backward compatibility but we'll use Velt presence users)
 const mockFriends: Friend[] = [
-  { id: '1', name: 'Sarah Chen', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah', isOnline: true },
-  { id: '2', name: 'Mike Johnson', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Mike', isOnline: true },
+  { id: 'user-1', name: 'Sarah Chen', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah', isOnline: true },
+  { id: 'user-2', name: 'Mike Johnson', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Mike', isOnline: true },
   { id: '3', name: 'Emma Davis', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Emma', isOnline: false },
   { id: '4', name: 'Alex Rodriguez', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex', isOnline: true },
 ];
@@ -483,6 +500,74 @@ const ThemeToggle: React.FC = () => {
         <Sun className="h-3.5 w-3.5" />
       )}
     </motion.button>
+  );
+};
+
+// User Switcher Component
+interface UserSwitcherProps {
+  currentUser: any;
+  onSwitchUser: (user: any) => void;
+}
+
+const UserSwitcher: React.FC<UserSwitcherProps> = ({ currentUser, onSwitchUser }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <motion.button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 p-1.5 rounded-md bg-card border border-border hover:bg-muted/50 transition-colors"
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+      >
+        <RefreshCw className="h-3.5 w-3.5" />
+        <span className="text-xs hidden sm:inline">Switch User</span>
+      </motion.button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="absolute top-full right-0 mt-2 w-64 bg-card border border-border rounded-lg shadow-lg p-3 z-50"
+          >
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground mb-3">Switch User</p>
+              {HARDCODED_USERS.map((user) => (
+                <motion.button
+                  key={user.userId}
+                  onClick={() => {
+                    onSwitchUser(user);
+                    setIsOpen(false);
+                  }}
+                  className={cn(
+                    "w-full flex items-center gap-3 p-2 rounded-md text-left transition-colors",
+                    currentUser?.userId === user.userId
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  )}
+                  whileHover={{ x: 2 }}
+                >
+                  <img
+                    src={user.photoUrl}
+                    alt={user.name}
+                    className="w-8 h-8 rounded-full"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{user.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                  </div>
+                  {currentUser?.userId === user.userId && (
+                    <Check className="h-4 w-4" />
+                  )}
+                </motion.button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 };
 
@@ -1215,9 +1300,10 @@ const FilterComponent: React.FC<FilterProps> = ({
 interface MovieNightPlannerProps {
   currentUser: any;
   onSignOut?: () => Promise<void>;
+  onSwitchUser?: (user: any) => void;
 }
 
-const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser, onSignOut }) => {
+const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser, onSignOut, onSwitchUser }) => {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1236,23 +1322,43 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser, onSi
   // Initialize Velt document and Follow Me mode
   useEffect(() => {
     const initializeVeltDocument = async () => {
-      if (client) {
-        await client.setDocument('movie-night-planner');
-        
-        // Enable Follow Me mode via API for better compatibility
+      if (client && currentUser) {
         try {
-          const presenceElement = client.getPresenceElement();
-          if (presenceElement && (presenceElement as any).enableFlockMode) {
-            (presenceElement as any).enableFlockMode();
-            console.log('Follow Me mode enabled via API');
+          await client.setDocument('movie-night-planner');
+          
+          // Enable Follow Me mode via API for better compatibility
+          try {
+            const presenceElement = client.getPresenceElement();
+            if (presenceElement && (presenceElement as any).enableFlockMode) {
+              (presenceElement as any).enableFlockMode();
+              console.log('Follow Me mode enabled via API');
+            }
+          } catch (error) {
+            console.log('Follow Me mode will work through VeltPresence component');
           }
+          
+          console.log('Velt document initialized for user:', currentUser.name);
         } catch (error) {
-          console.log('Follow Me mode will work through VeltPresence component');
+          console.error('Error initializing Velt document:', error);
         }
       }
     };
+    
+    // Initialize on mount and when user changes
     initializeVeltDocument();
-  }, [client]);
+    
+    // Listen for user switching events
+    const handleUserSwitch = () => {
+      console.log('User switch event detected, reinitializing Velt...');
+      setTimeout(initializeVeltDocument, 100);
+    };
+    
+    window.addEventListener('velt-user-switched', handleUserSwitch);
+    
+    return () => {
+      window.removeEventListener('velt-user-switched', handleUserSwitch);
+    };
+  }, [client, currentUser]);
 
   // Convert Velt presence users to our Friend format and ensure current user is included
   const onlineUsers: Friend[] = React.useMemo(() => {
@@ -1422,6 +1528,14 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser, onSi
             
             <div className="flex items-center gap-3">
               <ThemeToggle />
+              
+              {/* User Switcher */}
+              {onSwitchUser && (
+                <UserSwitcher 
+                  currentUser={currentUser}
+                  onSwitchUser={onSwitchUser}
+                />
+              )}
               
               {/* Velt Presence with Follow Me Mode - Click on avatars to follow users */}
               <VeltPresence flockMode={true} />

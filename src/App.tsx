@@ -4,28 +4,52 @@ import './App.css'
 import MovieNightPlanner from './MovieNightPlanner'
 import { VeltProvider, useVeltClient } from '@veltdev/react'
 
-// Helper function to generate unique user data
-function generateUniqueUser() {
-  const userId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-  const names = [
-    'Alex Chen', 'Sarah Johnson', 'Mike Rodriguez', 'Emma Davis', 'Jake Wilson',
-    'Lily Wang', 'Ryan Smith', 'Maya Patel', 'Sam Brown', 'Zoe Martinez',
-    'Liam Taylor', 'Ava Thompson', 'Noah Anderson', 'Mia Garcia', 'Lucas Lee'
-  ]
-  const randomName = names[Math.floor(Math.random() * names.length)]
-  
-  return {
-    userId,
-    name: randomName,
-    email: `${userId}@demo.com`,
-    photoUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${randomName}`,
+// Hardcoded users for the application
+const HARDCODED_USERS = [
+  {
+    userId: 'user-1',
+    name: 'Sarah Chen',
+    email: 'sarah.chen@example.com',
+    photoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah',
+    organizationId: 'movie-night-org'
+  },
+  {
+    userId: 'user-2', 
+    name: 'Mike Johnson',
+    email: 'mike.johnson@example.com',
+    photoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Mike',
     organizationId: 'movie-night-org'
   }
+];
+
+// Get or set default user
+function getDefaultUser() {
+  const savedUserId = localStorage.getItem('selected-user-id')
+  const user = HARDCODED_USERS.find(u => u.userId === savedUserId) || HARDCODED_USERS[0]
+  return user
 }
 
 function App() {
+  const [userKey, setUserKey] = useState(0)
+  
+  // Listen for user switches to force VeltProvider re-render
+  useEffect(() => {
+    const handleUserSwitch = () => {
+      setUserKey(prev => prev + 1)
+    }
+    
+    window.addEventListener('velt-user-switched', handleUserSwitch)
+    
+    return () => {
+      window.removeEventListener('velt-user-switched', handleUserSwitch)
+    }
+  }, [])
+  
   return (
-    <VeltProvider apiKey={import.meta.env.VITE_VELT_API_KEY || "YOUR_VELT_API_KEY"}>
+    <VeltProvider 
+      key={userKey} 
+      apiKey={import.meta.env.VITE_VELT_API_KEY || "YOUR_VELT_API_KEY"}
+    >
       <AuthenticatedApp />
     </VeltProvider>
   )
@@ -39,17 +63,8 @@ function AuthenticatedApp() {
   useEffect(() => {
     const initVelt = async () => {
       if (client && !isSignedOut) {
-        // Check if we have a saved user session
-        const savedUser = localStorage.getItem('velt-user-session')
-        let user
-        
-        if (savedUser) {
-          user = JSON.parse(savedUser)
-        } else {
-          // Generate unique user for this session
-          user = generateUniqueUser()
-          localStorage.setItem('velt-user-session', JSON.stringify(user))
-        }
+        // Use hardcoded users
+        const user = getDefaultUser()
         
         setCurrentUser(user)
         
@@ -62,6 +77,23 @@ function AuthenticatedApp() {
     initVelt()
   }, [client, isSignedOut])
 
+  // Listen for user changes across tabs
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'selected-user-id' && e.newValue !== e.oldValue) {
+        console.log('User changed in another tab, reloading...')
+        // Reload to ensure clean state across tabs
+        window.location.reload()
+      }
+    }
+
+    window.addEventListener('storage', handleStorageChange)
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+    }
+  }, [])
+
   // Improved cleanup handling
   useEffect(() => {
     const handleBeforeUnload = async (event: BeforeUnloadEvent) => {
@@ -69,7 +101,6 @@ function AuthenticatedApp() {
         // Ensure proper cleanup before page unload
         try {
           await client.signOutUser()
-          localStorage.removeItem('velt-user-session')
           console.log('Velt user signed out on page unload:', currentUser.name)
         } catch (error) {
           console.warn('Error during sign out:', error)
@@ -91,7 +122,6 @@ function AuthenticatedApp() {
       if (client && currentUser && !isSignedOut) {
         try {
           await client.signOutUser()
-          localStorage.removeItem('velt-user-session')
           console.log('Velt user signed out on page hide:', currentUser.name)
         } catch (error) {
           console.warn('Error during sign out:', error)
@@ -111,13 +141,54 @@ function AuthenticatedApp() {
     }
   }, [client, currentUser, isSignedOut])
 
+  // Handle user switching
+  const handleSwitchUser = async (newUser: any) => {
+    if (client && newUser.userId !== currentUser?.userId) {
+      try {
+        // Sign out current user completely
+        if (currentUser) {
+          await client.signOutUser()
+          console.log('Signed out user:', currentUser.name)
+        }
+        
+        // Clear the current user state first
+        setCurrentUser(null)
+        
+        // Small delay to ensure cleanup
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
+        // Save selected user ID
+        localStorage.setItem('selected-user-id', newUser.userId)
+        
+        // Sign in new user
+        setCurrentUser(newUser)
+        await client.identify(newUser)
+        
+        // Reinitialize the document with the new user
+        await client.setDocument('movie-night-planner')
+        
+        console.log('Switched to user:', newUser.name, newUser.userId)
+        
+        // Force a re-render to ensure Velt components pick up the new user
+        setTimeout(() => {
+          window.dispatchEvent(new Event('velt-user-switched'))
+        }, 200)
+        
+      } catch (error) {
+        console.error('Error switching user:', error)
+        // If switching fails, reload the page to ensure clean state
+        window.location.reload()
+      }
+    }
+  }
+
   // Handle manual sign out
   const handleSignOut = async () => {
     if (client && currentUser) {
       try {
         setIsSignedOut(true)
         await client.signOutUser()
-        localStorage.removeItem('velt-user-session')
+        localStorage.removeItem('selected-user-id')
         setCurrentUser(null)
         console.log('Velt user manually signed out:', currentUser.name)
         
@@ -136,8 +207,10 @@ function AuthenticatedApp() {
   return (
     <div className="App">
       <MovieNightPlanner 
+        key={currentUser?.userId || 'no-user'}
         currentUser={currentUser} 
         onSignOut={handleSignOut}
+        onSwitchUser={handleSwitchUser}
       />
     </div>
   )
