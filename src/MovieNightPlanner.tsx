@@ -1063,10 +1063,19 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends, currentUser, onStart
 
   return (
     <div className="bg-card border border-border rounded-lg p-4">
-      <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
-        <Users className="h-4 w-4" />
-        Online Friends ({onlineFriends.length})
-      </h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-foreground flex items-center gap-2">
+          <Users className="h-4 w-4" />
+          Online Friends ({onlineFriends.length})
+        </h3>
+        <VeltHuddleTool 
+          type="all" 
+          className="bg-primary text-primary-foreground px-3 py-1.5 rounded-md text-xs hover:bg-primary/90 transition-colors flex items-center gap-1.5"
+        >
+          <Video className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Huddle</span>
+        </VeltHuddleTool>
+      </div>
       
       <div className="space-y-3">
         {sortedFriends.map((friend) => {
@@ -1095,12 +1104,9 @@ const FriendsList: React.FC<FriendsListProps> = ({ friends, currentUser, onStart
                   You
                 </span>
               ) : (
-                <div className="flex items-center gap-2">
-                  <VeltHuddleTool className="bg-primary text-primary-foreground px-3 py-1 rounded-md text-xs hover:bg-primary/90 transition-colors flex items-center gap-1">
-                    <Video className="h-3 w-3" />
-                    Huddle
-                  </VeltHuddleTool>
-                </div>
+                <span className="text-xs text-muted-foreground">
+                  Online
+                </span>
               )}
             </motion.div>
           );
@@ -1314,6 +1320,7 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser, onSi
   const [selectedType, setSelectedType] = useState<'all' | 'movie' | 'tv'>('all');
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [enableHuddle, setEnableHuddle] = useState(true);
   
   const { client } = useVeltClient();
   const presenceUsers = usePresenceUsers();
@@ -1324,7 +1331,11 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser, onSi
     const initializeVeltDocument = async () => {
       if (client && currentUser) {
         try {
-          await client.setDocument('movie-night-planner');
+          // Use a time-based document ID that changes every 10 minutes to prevent stale huddles
+          const timeWindow = Math.floor(Date.now() / (10 * 60 * 1000)); // 10-minute windows
+          const documentId = `movie-night-planner-${timeWindow}`;
+          await client.setDocument(documentId);
+          console.log('Using document ID:', documentId);
           
           // Enable Follow Me mode via API for better compatibility
           try {
@@ -1359,6 +1370,23 @@ const MovieNightPlanner: React.FC<MovieNightPlannerProps> = ({ currentUser, onSi
       window.removeEventListener('velt-user-switched', handleUserSwitch);
     };
   }, [client, currentUser]);
+
+  // Cleanup effect to leave huddles on unmount
+  useEffect(() => {
+    return () => {
+      if (client) {
+        try {
+          const huddleElement = client.getHuddleElement();
+          if (huddleElement && (huddleElement as any).leaveHuddle) {
+            (huddleElement as any).leaveHuddle();
+            console.log('Left huddle on component unmount');
+          }
+        } catch (error) {
+          console.log('No huddle to leave on unmount');
+        }
+      }
+    };
+  }, [client]);
 
   // Convert Velt presence users to our Friend format and ensure current user is included
   const onlineUsers: Friend[] = React.useMemo(() => {
